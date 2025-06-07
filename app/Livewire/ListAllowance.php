@@ -44,6 +44,7 @@ use Filament\Tables\Columns\BadgeColumn;
 use Illuminate\Database\Eloquent\Model;
 use Filament\Forms\Form;
 use Illuminate\Database\Eloquent\Builder;
+use App\Traits\HasMonthOptions;
 
 
 
@@ -53,6 +54,26 @@ class ListAllowance extends Component implements HasForms, HasTable
 {
     use InteractsWithTable;
     use InteractsWithForms;
+    use HasMonthOptions;
+
+    // Constants for allowance note options
+    const ALLOWANCE_NOTE_PAID = 'dah_bayar';
+    const ALLOWANCE_NOTE_UNPAID = 'belum_bayar';
+
+    /**
+     * Get allowance note options
+     *
+     * @return array
+     */
+    protected function getAllowanceNoteOptions(): array
+    {
+        return [
+            self::ALLOWANCE_NOTE_PAID => 'Elaun Dah Dibayar',
+            self::ALLOWANCE_NOTE_UNPAID => 'Elaun Belum Dibayar',
+        ];
+    }
+
+    // Method generateMonthOptions() sekarang dari HasMonthOptions trait
 
 
 
@@ -64,9 +85,9 @@ class ListAllowance extends Component implements HasForms, HasTable
 
         return $table
 
-       
+
             ->striped()
-            
+
             ->groups([
                     Group::make('month')
                     ->label('Bulan')
@@ -77,7 +98,7 @@ class ListAllowance extends Component implements HasForms, HasTable
                    // ->collapsible(),
                    // ->scopeQueryByKeyUsing(fn (Builder $query, string $key) => $query->where('month', $key)),
                    // ->groupQueryUsing(fn (Builder $query) => $query->groupBy('month')),
-                ])  
+                ])
              ->groupRecordsTriggerAction(
                     fn (Action $action) => $action
                         ->button()
@@ -101,7 +122,7 @@ class ListAllowance extends Component implements HasForms, HasTable
                     TextColumn::make('created_at')
                     ->label('Tarikh Hantar')
                     ->sortable(),
-               
+
                     TextColumn::make('month')
                     ->label('Bulan')
                     ->toggleable()
@@ -111,103 +132,55 @@ class ListAllowance extends Component implements HasForms, HasTable
                     ->label('Elaun')
                     ->currency('MYR')
                     ->searchable()
-                    ->summarize(Sum::make()->money('MYR'))
+                    ->summarize(Sum::make()->formatStateUsing(fn ($state) => 'RM ' . number_format($state, 2)))
                     ->toggleable(),
 
                     TextColumn::make('allowance_note')
                 ->badge()
                 ->label('Status Elaun') // Optional: Add a label for the column header
                 ->formatStateUsing(fn ($state) => match ($state) {
-                    'dah_bayar' => 'Dah Bayar',
-
-                    'belum_bayar' => 'Belum Bayar',
-
+                    self::ALLOWANCE_NOTE_PAID => 'Dah Bayar',
+                    self::ALLOWANCE_NOTE_UNPAID => 'Belum Bayar',
                     'NULL'  => 'Tiada Data',
-
-                   
                })
    //        IconColumn::make('allowance_note')
   //  ->icon(fn (string $state): string => match ($state) {
   //      'dah_bayar' => 'si-ticktick',
   //      'belum_bayar' => 'heroicon-s-table-cells',
-       
+
   //  })
                 ->color(fn (string $state): string => match ($state) {
-                    'dah_bayar' => 'success',
-                    'belum_bayar' => 'danger',
-                   
+                    self::ALLOWANCE_NOTE_PAID => 'success',
+                    self::ALLOWANCE_NOTE_UNPAID => 'danger',
                     'NULL' => 'gray',
                 }),
-                  
-                  
+
+
 
 
 
             ])
             ->defaultGroup('created_by.name')
             //->groupsOnly()
-    
+
             ->filters([
                 SelectFilter::make('allowance_note')
                 ->label('Elaun Status')
                 ->options([
-                    'dah_bayar' => 'Dah Bayar',
-
-                    'belum_bayar' => 'Belum Bayar',
-
-                  
-
+                    self::ALLOWANCE_NOTE_PAID => 'Dah Bayar',
+                    self::ALLOWANCE_NOTE_UNPAID => 'Belum Bayar',
                 ]),
                 SelectFilter::make('month')
                 ->label('Bulan')
                 ->searchable()
                 ->preload()
                // ->default()
-                ->options([
-                    '03-2022' => 'Mac 2022',
-                    '04-2022' => 'April 2022',
-                    '05-2022' => 'Mei 2022',
-                    '06-2022' => 'Jun 2022',
-                    '07-2022' => 'Julai 2022',
-                    '08-2022' => 'Ogos 2022',
-                    '09-2022' => 'September 2022',
-                    '10-2022' => 'Oktober 2022',
-                    '11-2022' => 'November 2022',
-                    '12-2022' => 'Disember 2022',
-                    '01-2023' => 'Januari 2023',
-                    '02-2023' => 'Februari 2023',
-                    '03-2023' => 'Mac 2023',
-                    '04-2023' => 'April 2023',
-                    '05-2023' => 'Mei 2023',
-                    '06-2023' => 'Jun 2023',
-                    '07-2023' => 'Julai 2023',
-                    '08-2023' => 'Ogos 2023',
-                    '09-2023' => 'September 2023',
-                    '10-2023' => 'Oktober 2023',
-                    '11-2023' => 'November 2023',
-                    '12-2023' => 'Disember 2023',
-                    '01-2024' => 'Januari 2024',
-                    '02-2024' => 'Februari 2024',
-                    '03-2024' => 'Mac 2024',
-                    '04-2024' => 'April 2024',
-                    '05-2024' => 'Mei 2024',
-                    '06-2024' => 'Jun 2024',
-                    '07-2024' => 'Julai 2024',
-                    '08-2024' => 'Ogos 2024',
-                    '09-2024' => 'September 2024',
-                    '10-2024' => 'Oktober 2024',
-                    '11-2024' => 'November 2024',
-                    '12-2024' => 'Disember 2024',
-                    '01-2025' => 'Januari 2025',
-                    '02-2025' => 'Februari 2025',
-                    '03-2025' => 'Mac 2025',
-                    '04-2025' => 'April 2025',
-                ]),
-             
+                ->options($this->generateMonthOptions()),
+
 
             ])
             ->actions([
-           
+
             ])
             ->groupedBulkActions([
 
@@ -219,7 +192,7 @@ class ListAllowance extends Component implements HasForms, HasTable
                     ->label('Padam')
                     ->action(fn (Collection $records) => $records->each->delete())
                     ->icon('heroicon-s-trash'),
-       
+
                     BulkAction::make('edit')
                     ->icon('heroicon-o-pencil')
                     ->label('Ubah')
@@ -245,13 +218,10 @@ class ListAllowance extends Component implements HasForms, HasTable
                         return $formData;
                     })
                     ->form([
-                   
+
                          Select::make('allowance_note')
                             ->label('Status')
-                            ->options([
-                                'dah_bayar' => 'Elaun Dah Dibayar',
-                                'belum_bayar' => 'Elaun Belum Dibayar',
-                            ])
+                            ->options($this->getAllowanceNoteOptions())
                             ->required(),
                     ])
 
@@ -264,6 +234,6 @@ class ListAllowance extends Component implements HasForms, HasTable
         return view('livewire.list-fee');
     }
 
-    
+
 
 }

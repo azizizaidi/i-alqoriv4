@@ -35,10 +35,10 @@ class ClassNameResource extends Resource
                 TextColumn::make('name')
                 ->label('Nama'),
                 TextColumn::make('feeperhour')
-                ->money('MYR')
+                ->formatStateUsing(fn ($state) => 'RM ' . number_format($state, 2))
                 ->label('Yuran Per Jam'),
                 TextColumn::make('allowanceperhour')
-                ->money('MYR')
+                ->formatStateUsing(fn ($state) => 'RM ' . number_format($state, 2))
                 ->label('Elaun Per Jam'),
                 TextColumn::make('created_at')
                 ->label('Tarikh Dibuat'),

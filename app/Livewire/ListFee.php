@@ -42,14 +42,68 @@ use Filament\Forms\Components\TextInput;
 use Filament\Tables\Columns\BadgeColumn;
 use Illuminate\Database\Eloquent\Model;
 use Closure;
-
-
+use App\Traits\HasMonthOptions;
 
 
 class ListFee extends Component implements HasForms, HasTable
 {
     use InteractsWithTable;
     use InteractsWithForms;
+    use HasMonthOptions;
+
+    // Constants for payment status
+    const STATUS_UNPAID = '0';
+    const STATUS_PAID = '1';
+    const STATUS_PROCESSING = '2';
+    const STATUS_FAILED = '3';
+    const STATUS_IN_PROCESS = '4';
+    const STATUS_OVERPAID = '5';
+
+    /**
+     * Get payment status options
+     *
+     * @return array
+     */
+    protected function getStatusOptions(): array
+    {
+        return [
+            self::STATUS_UNPAID => 'Belum Bayar',
+            self::STATUS_PAID => 'Dah Bayar',
+            self::STATUS_PROCESSING => 'Dalam Proses Transaksi',
+            self::STATUS_FAILED => 'Gagal Bayar',
+            self::STATUS_IN_PROCESS => 'Dalam Proses',
+            self::STATUS_OVERPAID => 'Yuran Terlebih',
+        ];
+    }
+
+    /**
+     * Get status color mapping
+     *
+     * @return array
+     */
+    protected function getStatusColors(): array
+    {
+        return [
+            self::STATUS_UNPAID => 'danger',
+            self::STATUS_PAID => 'success',
+            self::STATUS_PROCESSING => 'primary',
+            self::STATUS_FAILED => 'info',
+            self::STATUS_IN_PROCESS => 'gray',
+            self::STATUS_OVERPAID => 'warning',
+        ];
+    }
+
+    // Method generateMonthOptions() sekarang dari HasMonthOptions trait
+
+    /**
+     * Get excluded months for query
+     *
+     * @return array
+     */
+    protected function getExcludedMonths(): array
+    {
+        return ['null', '02-2022', '03-2022', '04-2022'];
+    }
 
 
 
@@ -60,7 +114,7 @@ class ListFee extends Component implements HasForms, HasTable
     {
 
         return $table
-       
+
             ->striped()
             ->groups([
 
@@ -69,7 +123,7 @@ class ListFee extends Component implements HasForms, HasTable
             ->query(function (){
                 return ReportClass::with(['registrar', 'created_by'])
                    // ->where('registrar_id', $registrar_id)
-                    ->whereNotIn('month', ['null', '02-2022','03-2022', '04-2022'])
+                    ->whereNotIn('month', $this->getExcludedMonths())
                     ->orderBy('created_at', 'desc');
             })
             ->paginated([5,10, 25, 50, 100])
@@ -104,28 +158,15 @@ class ListFee extends Component implements HasForms, HasTable
                     ->label('Yuran')
                     ->currency('MYR')
                     ->toggleable(),
-                   
+
                     TextColumn::make('note')
                     ->label('Nota')
                     ->toggleable(isToggledHiddenByDefault: true),
 
                     TextColumn::make('status')
                    ->badge()
-                   ->label('Status') // Optional: Add a label for the column header
-                   ->formatStateUsing(fn ($state) => match ($state) {
-                   0 => 'Belum Bayar',
-
-                    1 => 'Dah Bayar',
-
-                    2 => 'Dalam Proses Transaksi',
-
-                    3 => 'Gagal Bayar',
-
-                    4 => 'Dalam Proses',
-
-                    5 => 'Yuran Terlebih',
-         
-                })
+                   ->label('Status')
+                   ->formatStateUsing(fn ($state) => $this->getStatusOptions()[$state] ?? 'Unknown')
   //       IconColumn::make('status')
   //       ->icon(fn (string $state): string => match ($state) {
   //          '0' => 'heroicon-s-table-cells',
@@ -134,19 +175,11 @@ class ListFee extends Component implements HasForms, HasTable
   //         '3' => 'elemplus-failed',
   //         '4' => 'heroicon-m-arrow-uturn-left',
   //         '5' => 'ri-refund-2-fill'
-             
-            
+
+
    //      })
-                   
-                ->color(fn (string $state): string => match ($state) {
-                    '0' => 'danger',
-                    '1' => 'success',
-                    '2' => 'primary',
-                    '3' => 'info',
-                     '4' => 'gray',
-                     '5' => 'warning',
-                    ///default => 'gray', 
-                }),
+
+                ->color(fn (string $state): string => $this->getStatusColors()[$state] ?? 'gray'),
 
                      ImageColumn::make('receipt')
                      ->label('Resit')
@@ -166,65 +199,14 @@ class ListFee extends Component implements HasForms, HasTable
             ])
             ->filters([
                 SelectFilter::make('status')
-                ->options([
-                    0 => 'Belum Bayar',
-
-                    1 => 'Dah Bayar',
-
-                    2 => 'Dalam Proses Transaksi',
-
-                    3 => 'Gagal Bayar',
-
-                    
-                    4 => 'Dalam Proses',
-
-                     5 => 'Yuran Terlebih',
-
-                ]),
+                ->options($this->getStatusOptions()),
 
                 SelectFilter::make('month')
                 ->label('Bulan')
-                ->options([
-                    '03-2022' => 'Mac 2022',
-                    '04-2022' => 'April 2022',
-                    '05-2022' => 'Mei 2022',
-                    '06-2022' => 'Jun 2022',
-                    '07-2022' => 'Julai 2022',
-                    '08-2022' => 'Ogos 2022',
-                    '09-2022' => 'September 2022',
-                    '10-2022' => 'Oktober 2022',
-                    '11-2022' => 'November 2022',
-                    '12-2022' => 'Disember 2022',
-                    '01-2023' => 'Januari 2023',
-                    '02-2023' => 'Februari 2023',
-                    '03-2023' => 'Mac 2023',
-                    '04-2023' => 'April 2023',
-                    '05-2023' => 'Mei 2023',
-                    '06-2023' => 'Jun 2023',
-                    '07-2023' => 'Julai 2023',
-                    '08-2023' => 'Ogos 2023',
-                    '09-2023' => 'September 2023',
-                    '10-2023' => 'Oktober 2023',
-                    '11-2023' => 'November 2023',
-                    '12-2023' => 'Disember 2023',
-                    '01-2024' => 'Januari 2024',
-                    '02-2024' => 'Februari 2024',
-                    '03-2024' => 'Mac 2024',
-                    '04-2024' => 'April 2024',
-                    '05-2024' => 'Mei 2024',
-                     '06-2024' => 'Jun 2024',
-                    '07-2024' => 'Julai 2024',
-                    '08-2024' => 'Ogos 2024',
-                    '09-2024' => 'September 2024',
-                    '10-2024' => 'Oktober 2024',
-                    '11-2024' => 'November 2024',
-                    '12-2024' => 'Disember 2024',
-                    '01-2025' => 'Januari 2025',
-                    '02-2025' => 'Februari 2025',
-                    '03-2025' => 'Mac 2025',
-                    '04-2025' => 'April 2025',
-                ]),
-             
+                ->searchable()
+                ->preload()
+                ->options($this->generateMonthOptions()),
+
 
             ])
             ->actions([
@@ -235,14 +217,14 @@ class ListFee extends Component implements HasForms, HasTable
                 ->icon('heroicon-c-clipboard-document-list')
                 ->action(function (ReportClass $record) {
                     $this->finalhour = $record->total_hour + ($record->total_hour_2 ?? 0); // Calculate finalhour
-            
+
                     $pdf = Pdf::loadHtml(
                         Blade::render('pdf', ['value' => $record, 'finalhour' => $this->finalhour])
                     );
-            
+
                     // Define the filename as "invois" followed by the record number
                     $filename = 'invois' . $record->id . '.pdf';
-            
+
                     return response()->streamDownload(function () use ($pdf) {
                         echo $pdf->output();
                     }, $filename, [
@@ -253,14 +235,14 @@ class ListFee extends Component implements HasForms, HasTable
                         'Expires' => '0',
                     ]);
                 }),
-            
+
                Action::make('bayar')
                        ->icon('heroicon-m-credit-card')
                        ->color('danger')
                        ->visible(fn(): bool => auth()->user()->can('view-any User'))
                      // ->visible(fn () => in_array(auth()->user()->role_id, [1, 5]))
                        ->url(fn (ReportClass $pay): string => route('toyyibpay.createBill',$pay)),
-           
+
               Action::make('sunting')
                     ->icon('heroicon-o-pencil-square')
                   //  ->visible(fn () => in_array(auth()->user()->role_id, [1, 5]))
@@ -274,23 +256,10 @@ class ListFee extends Component implements HasForms, HasTable
                        ->form([
                            Select::make('status')
                                ->label('Status')
-                               ->options([
-                                0 => 'Belum Bayar',
-
-                                1 => 'Dah Bayar',
-
-                                2 => 'Dalam Proses Transaksi',
-
-                                3 => 'Gagal Bayar',
-
-                                4 => 'Dalam Proses',
-
-                                 5 => 'Yuran Terlebih',
-
-                               ]),
+                               ->options($this->getStatusOptions()),
                               // ->required(),
                               // FileUpload::make('receipt')
-                           
+
                             //   ->image()
                             //   ->label('Resit')
                             //   ->required()

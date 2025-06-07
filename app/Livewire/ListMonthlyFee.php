@@ -43,16 +43,74 @@ use Illuminate\Database\Eloquent\Model;
 use Closure;
 use Filament\Notifications\Notification;
 use Jantinnerezo\LivewireAlert\LivewireAlert;
+use App\Traits\HasMonthOptions;
 
 class ListMonthlyFee extends Component implements HasForms, HasTable
 {
     use InteractsWithTable;
     use InteractsWithForms;
     use LivewireAlert;
+    use HasMonthOptions;
 
     public $alertMessage;
     public $alertType;
     public $finalhour;
+
+    // Constants for payment status
+    const STATUS_UNPAID = '0';
+    const STATUS_PAID = '1';
+    const STATUS_PROCESSING = '2';
+    const STATUS_FAILED = '3';
+    const STATUS_IN_PROCESS = '4';
+    const STATUS_OVERPAID = '5';
+
+    /**
+     * Get payment status options
+     *
+     * @return array
+     */
+    protected function getStatusOptions(): array
+    {
+        return [
+            self::STATUS_UNPAID => 'Belum Bayar',
+            self::STATUS_PAID => 'Dah Bayar',
+            self::STATUS_PROCESSING => 'Dalam Proses Transaksi',
+            self::STATUS_FAILED => 'Gagal Bayar',
+            self::STATUS_IN_PROCESS => 'Dalam Proses',
+            self::STATUS_OVERPAID => 'Yuran Terlebih',
+        ];
+    }
+
+    /**
+     * Get status color mapping
+     *
+     * @return array
+     */
+    protected function getStatusColors(): array
+    {
+        return [
+            self::STATUS_UNPAID => 'danger',
+            self::STATUS_PAID => 'success',
+            self::STATUS_PROCESSING => 'warning',
+            self::STATUS_FAILED => 'info',
+            self::STATUS_IN_PROCESS => 'gray',
+            self::STATUS_OVERPAID => 'primary',
+        ];
+    }
+
+    // Method generateMonthOptions() sekarang dari HasMonthOptions trait
+
+    /**
+     * Get months to exclude from queries
+     *
+     * @return array
+     */
+    protected function getExcludedMonths(): array
+    {
+        // You can customize this method to dynamically determine which months to exclude
+        // For now, we'll keep the same exclusions as before
+        return ['null', '02-2022', '03-2022', '04-2022'];
+    }
 
     public function table(Table $table): Table
     {
@@ -64,7 +122,7 @@ class ListMonthlyFee extends Component implements HasForms, HasTable
             ->query(function () use ($registrar_id) {
                 return ReportClass::with(['registrar', 'created_by'])
                     ->where('registrar_id', $registrar_id)
-                    ->whereNotIn('month', ['null', '02-2022','03-2022', '04-2022'])
+                    ->whereNotIn('month', $this->getExcludedMonths())
                     ->orderBy('created_at', 'desc');
             })
             ->paginated([5, 10, 25, 50, 100])
@@ -98,21 +156,8 @@ class ListMonthlyFee extends Component implements HasForms, HasTable
                 TextColumn::make('status')
                     ->badge()
                     ->label('Status')
-                    ->formatStateUsing(fn($state) => match ($state) {
-                        0 => 'Belum Bayar',
-                        1 => 'Dah Bayar',
-                        2 => 'Dalam Proses Transaksi',
-                        3 => 'Gagal Bayar',
-                        4 => 'Dalam Proses',
-                        default => 'Unknown',
-                    })
-                    ->color(fn(string $state): string => match ($state) {
-                        '0' => 'danger',
-                        '1' => 'success',
-                        '2' => 'warning',
-                        '3' => 'info',
-                        '4' => 'gray',
-                    }),
+                    ->formatStateUsing(fn($state) => $this->getStatusOptions()[$state] ?? 'Unknown')
+                    ->color(fn(string $state): string => $this->getStatusColors()[$state] ?? 'gray'),
                 ImageColumn::make('receipt')
                     ->label('Resit')
                     ->toggleable(isToggledHiddenByDefault: true)
@@ -122,46 +167,10 @@ class ListMonthlyFee extends Component implements HasForms, HasTable
             ])
             ->filters([
                 SelectFilter::make('status')
-                    ->options([
-                        0 => 'Belum Bayar',
-                        1 => 'Dah Bayar',
-                        2 => 'Dalam Proses Transaksi',
-                        3 => 'Gagal Bayar',
-                        4 => 'Dalam Proses',
-                    ]),
+                    ->options($this->getStatusOptions()),
                 SelectFilter::make('month')
                     ->label('Bulan')
-                    ->options([
-                        '03-2022' => 'Mac 2022',
-                        '04-2022' => 'April 2022',
-                        '05-2022' => 'Mei 2022',
-                        '06-2022' => 'Jun 2022',
-                        '07-2022' => 'Julai 2022',
-                        '08-2022' => 'Ogos 2022',
-                        '09-2022' => 'September 2022',
-                        '10-2022' => 'Oktober 2022',
-                        '11-2022' => 'November 2022',
-                        '12-2022' => 'Disember 2022',
-                        '01-2023' => 'Januari 2023',
-                        '02-2023' => 'Februari 2023',
-                        '03-2023' => 'Mac 2023',
-                        '04-2023' => 'April 2023',
-                        '05-2023' => 'Mei 2023',
-                        '06-2023' => 'Jun 2023',
-                        '07-2023' => 'Julai 2023',
-                        '08-2023' => 'Ogos 2023',
-                        '09-2023' => 'September 2023',
-                        '10-2023' => 'Oktober 2023',
-                        '11-2023' => 'November 2023',
-                        '12-2023' => 'Disember 2023',
-                        '01-2024' => 'Januari 2024',
-                        '02-2024' => 'Februari 2024',
-                        '03-2024' => 'Mac 2024',
-                        '04-2024' => 'April 2024',
-                        '05-2024' => 'Mei 2024',
-                        '06-2024' => 'Jun 2024',
-                        '07-2024' => 'Julai 2024',
-                    ]),
+                    ->options($this->generateMonthOptions()),
             ])
             ->actions([
                 Action::make('bayar')
@@ -175,14 +184,14 @@ class ListMonthlyFee extends Component implements HasForms, HasTable
                     ->icon('heroicon-c-clipboard-document-list')
                     ->action(function (ReportClass $record) {
                         $this->finalhour = $record->total_hour + ($record->total_hour_2 ?? 0); // Calculate finalhour
-                
+
                         $pdf = Pdf::loadHtml(
                             Blade::render('pdf', ['value' => $record, 'finalhour' => $this->finalhour])
                         );
-                
+
                         // Define the filename as "invois" followed by the record number
                         $filename = 'invois' . $record->id . '.pdf';
-                
+
                         return response()->streamDownload(function () use ($pdf) {
                             echo $pdf->output();
                         }, $filename, [
@@ -193,7 +202,7 @@ class ListMonthlyFee extends Component implements HasForms, HasTable
                             'Expires' => '0',
                         ]);
                     }),
-                
+
             ])
             ->groupedBulkActions([
                 ExportBulkAction::make()->label('Eksport'),

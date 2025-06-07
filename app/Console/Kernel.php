@@ -12,7 +12,14 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule): void
     {
-        // $schedule->command('inspire')->hourly();
+        // Update month options setiap bulan pada hari pertama jam 00:01
+        $schedule->command('month:update')
+                 ->monthlyOn(1, '00:01')
+                 ->timezone('Asia/Kuala_Lumpur')
+                 ->description('Auto update month options untuk filter');
+
+        // Optional: Jalankan juga setiap hari untuk memastikan data terkini
+        // $schedule->command('month:update')->daily();
     }
 
     /**

@@ -43,6 +43,7 @@ use Illuminate\Database\Eloquent\Model;
 use Closure;
 use Filament\Notifications\Notification;
 use Jantinnerezo\LivewireAlert\LivewireAlert;
+use App\Traits\HasMonthOptions;
 
 
 
@@ -51,12 +52,66 @@ class ListTransaction extends Component implements HasForms, HasTable
 {
     use InteractsWithTable;
     use InteractsWithForms;
+    use HasMonthOptions;
     use LivewireAlert;
 
+    // Constants for payment status
+    const STATUS_UNPAID = '0';
+    const STATUS_PAID = '1';
+    const STATUS_PROCESSING = '2';
+    const STATUS_FAILED = '3';
+    const STATUS_IN_PROCESS = '4';
+    const STATUS_OVERPAID = '5';
+
+    /**
+     * Get payment status options
+     *
+     * @return array
+     */
+    protected function getStatusOptions(): array
+    {
+        return [
+            self::STATUS_UNPAID => 'Belum Bayar',
+            self::STATUS_PAID => 'Dah Bayar',
+            self::STATUS_PROCESSING => 'Dalam Proses Transaksi',
+            self::STATUS_FAILED => 'Gagal Bayar',
+            self::STATUS_IN_PROCESS => 'Dalam Proses',
+            self::STATUS_OVERPAID => 'Yuran Terlebih',
+        ];
+    }
+
+    /**
+     * Get status color mapping
+     *
+     * @return array
+     */
+    protected function getStatusColors(): array
+    {
+        return [
+            self::STATUS_UNPAID => 'danger',
+            self::STATUS_PAID => 'success',
+            self::STATUS_PROCESSING => 'primary',
+            self::STATUS_FAILED => 'info',
+            self::STATUS_IN_PROCESS => 'gray',
+            self::STATUS_OVERPAID => 'warning',
+        ];
+    }
+
+    // Method generateMonthOptions() sekarang dari HasMonthOptions trait
+
+    /**
+     * Get excluded months for query
+     *
+     * @return array
+     */
+    protected function getExcludedMonths(): array
+    {
+        return ['null', 'mar2022', 'apr2022'];
+    }
 
     public $alertMessage;
     public $alertType;
-    
+
     public function table(Table $table): Table
 
    {
@@ -64,7 +119,7 @@ class ListTransaction extends Component implements HasForms, HasTable
     $registrar_id =auth()->id();
 
         return $table
-       
+
             ->striped()
             ->groups([
 
@@ -73,7 +128,7 @@ class ListTransaction extends Component implements HasForms, HasTable
             ->query(function () use ($registrar_id) {
                 return ReportClass::with(['registrar', 'created_by'])
                     ->where('registrar_id', $registrar_id)
-                    ->whereNotIn('month', ['null', 'mar2022', 'apr2022']);
+                    ->whereNotIn('month', $this->getExcludedMonths());
             })
             ->paginated([5,10, 25, 50, 100])
             ->columns([
@@ -111,16 +166,7 @@ class ListTransaction extends Component implements HasForms, HasTable
                     ->label('Nota')
                     ->toggleable(isToggledHiddenByDefault: true),
                     SelectColumn::make('status')
-                    ->options([
-                        0 => 'Belum Bayar',
-
-                        1 => 'Dah Bayar',
-
-                        2 => 'Dalam Proses',
-
-                        3 => 'Gagal Bayar',
-
-                     ])
+                    ->options($this->getStatusOptions())
 
                     // ->tooltip(fn (Model $record): string => " {$record->options}")
 
@@ -146,48 +192,14 @@ class ListTransaction extends Component implements HasForms, HasTable
             ])
             ->filters([
                 SelectFilter::make('status')
-                ->options([
-                    0 => 'Belum Bayar',
-
-                    1 => 'Dah Bayar',
-
-                    2 => 'Dalam Proses',
-
-                    3 => 'Gagal Bayar',
-
-                ]),
+                ->options($this->getStatusOptions()),
 
                 SelectFilter::make('month')
                 ->label('Bulan')
-                ->options([
-                    '03-2022' => 'Mac 2022',
-                    '04-2022' => 'April 2022',
-                    '05-2022' => 'Mei 2022',
-                    '06-2022' => 'Jun 2022',
-                    '07-2022' => 'Julai 2022',
-                    '08-2022' => 'Ogos 2022',
-                    '09-2022' => 'September 2022',
-                    '10-2022' => 'Oktober 2022',
-                    '11-2022' => 'November 2022',
-                    '12-2022' => 'Disember 2022',
-                    '01-2023' => 'Januari 2023',
-                    '02-2023' => 'Februari 2023',
-                    '03-2023' => 'Mac 2023',
-                    '04-2023' => 'April 2023',
-                    '05-2023' => 'Mei 2023',
-                    '06-2023' => 'Jun 2023',
-                    '07-2023' => 'Julai 2023',
-                    '08-2023' => 'Ogos 2023',
-                    '09-2023' => 'September 2023',
-                    '10-2023' => 'Oktober 2023',
-                    '11-2023' => 'November 2023',
-                    '12-2023' => 'Disember 2023',
-                    '01-2024' => 'Januari 2024',
-                    '02-2024' => 'Februari 2024',
-                    '03-2024' => 'Mac 2024',
-                    '04-2024' => 'April 2024',
-                ]),
-             
+                ->searchable()
+                ->preload()
+                ->options($this->generateMonthOptions()),
+
 
             ])
             ->actions([
@@ -195,14 +207,14 @@ class ListTransaction extends Component implements HasForms, HasTable
              //          ->icon('heroicon-s-eye')
              //          ->color('success')
              //          ->url(fn (ReportClass $record): string => route('filament.admin.pages.invoices', ['id' => $record])),
-            
-           
+
+
                Action::make('bayar')
                        ->icon('heroicon-m-credit-card')
                        ->color('success')
                        ->url(fn (ReportClass $pay): string => route('toyyibpay.createBill', $pay))
                        ->visible(fn (Model $record) => $record->status != 1),
-               Action::make('pdf') 
+               Action::make('pdf')
                        ->label('Resit')
                        ->color('danger')
                        ->icon('heroicon-c-clipboard-document-list')
@@ -212,19 +224,19 @@ class ListTransaction extends Component implements HasForms, HasTable
                                    Blade::render('pdf-receipt', ['record' => $record])
                                )->stream();
                            }, $record->number . '.pdf-resit');
-                       }), 
-           
-           
+                       }),
 
-                       
-                      
+
+
+
+
             ])
             ->groupedBulkActions([
 
                     ExportBulkAction::make()
                     ->label('Eksport'),
                     //Tables\Actions\DeleteBulkAction::make(),
-                   
+
 
 
             ]);
@@ -250,7 +262,7 @@ class ListTransaction extends Component implements HasForms, HasTable
     public function save(): void
     {
         // ...
- 
+
         Notification::make()
             ->title('Berjaya Buat Pembayaran')
             ->icon('heroicon-o-document-text')

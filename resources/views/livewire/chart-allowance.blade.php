@@ -1,6 +1,6 @@
 <div>
 @if(auth()->user()->roles->contains(1) || auth()->user()->roles->contains(2))
-<div x-data="{ chart: null }" x-init="">
+<div x-data="{ chart: null }" x-init="setTimeout(() => { document.getElementById('yearSelect').value = '2022'; updateChart(); }, 500)">
   <h1>Jumlah Elaun Guru</h1>
   <hr>
 
@@ -33,47 +33,26 @@
 
 
 
-var alwjan22 = <?php echo $reportclasses->where('month',null)->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwfeb22 = <?php echo $reportclasses->where('month','02-2022')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwmar22 = <?php echo $reportclasses->where('month','03-2022')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwapr22 = <?php echo $reportclasses->where('month','04-2022')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwmay22 = <?php echo $reportclasses->where('month','05-2022')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwjun22 = <?php echo $reportclasses->where('month','06-2022')->whereNull('deleted_at')->sum('allowance') ?? ''?>;
-var alwjul22 = <?php echo $reportclasses->where('month','07-2022')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwogs22 = <?php echo $reportclasses->where('month','08-2022')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwsep22 = <?php echo $reportclasses->where('month','09-2022')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwoct22 = <?php echo $reportclasses->where('month','10-2022')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwnov22 = <?php echo $reportclasses->where('month','11-2022')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwdec22 = <?php echo $reportclasses->where('month','12-2022')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwjan23 = <?php echo $reportclasses->where('month','01-2023')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwfeb23 = <?php echo $reportclasses->where('month','02-2023')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwmar23 = <?php echo $reportclasses->where('month','03-2023')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwapr23 = <?php echo $reportclasses->where('month','04-2023')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwmay23 = <?php echo $reportclasses->where('month','05-2023')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwjun23 = <?php echo $reportclasses->where('month','06-2023')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwjul23 = <?php echo $reportclasses->where('month','07-2023')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwogs23 = <?php echo $reportclasses->where('month','08-2023')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwsep23 = <?php echo $reportclasses->where('month','09-2023')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwoct23 = <?php echo $reportclasses->where('month','10-2023')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwnov23 = <?php echo $reportclasses->where('month','11-2023')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwdec23 = <?php echo $reportclasses->where('month','12-2023')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwjan24 = <?php echo $reportclasses->where('month','01-2024')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwfeb24 = <?php echo $reportclasses->where('month','02-2024')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwmar24 = <?php echo $reportclasses->where('month','03-2024')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwapr24 = <?php echo $reportclasses->where('month','04-2024')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwmay24 = <?php echo $reportclasses->where('month','05-2024')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwjun24 = <?php echo $reportclasses->where('month','06-2024')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwjul24 = <?php echo $reportclasses->where('month','07-2024')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwogs24 = <?php echo $reportclasses->where('month','08-2024')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwsep24 = <?php echo $reportclasses->where('month','09-2024')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwoct24 = <?php echo $reportclasses->where('month','10-2024')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwnov24 = <?php echo $reportclasses->where('month','11-2024')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwdec24 = <?php echo $reportclasses->where('month','12-2024')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwjan25 = <?php echo $reportclasses->where('month','01-2025')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwfeb25 = <?php echo $reportclasses->where('month','02-2025')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwmar25 = <?php echo $reportclasses->where('month','03-2025')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwapr25 = <?php echo $reportclasses->where('month','04-2025')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
-var alwmay25 = <?php echo $reportclasses->where('month','05-2025')->whereNull('deleted_at')->sum('allowance') ?? ''; ?>;
+// Store all report classes data in a JavaScript variable
+var reportClassesData = <?php echo json_encode($reportclasses); ?>;
+
+// Function to get allowance data for a specific month and year
+function getAllowanceForMonth(month, year) {
+    // Handle special case for January 2022 which uses null as month
+    if (month === '01' && year === '2022') {
+        return reportClassesData
+            .filter(item => item.month === null && item.deleted_at === null)
+            .reduce((sum, item) => sum + (parseFloat(item.allowance) || 0), 0);
+    }
+
+    // Format month-year string (e.g., "01-2023")
+    var monthYearFormat = month + '-' + year;
+
+    // Filter and sum allowances for the specified month-year
+    return reportClassesData
+        .filter(item => item.month === monthYearFormat && item.deleted_at === null)
+        .reduce((sum, item) => sum + (parseFloat(item.allowance) || 0), 0);
+}
 
 // Define the chart data and options
 
@@ -133,30 +112,19 @@ var chart = new Chart(document.getElementById('myChart'), {
 // Function to update the chart based on the selected year
 function updateChart() {
   var selectedYear = document.getElementById('yearSelect').value;
-  var feeData = [];
   var allowanceData = [];
 
-  // Retrieve the data for the selected year
-  switch (selectedYear) {
-    case '2022':
-      
-      allowanceData = [alwjan22,alwfeb22,alwmar22, alwapr22, alwmay22, alwjun22, alwjul22, alwogs22, alwsep22, alwoct22, alwnov22, alwdec22];
-      break;
-    case '2023':
-      
-      allowanceData =[alwjan23,alwfeb23,alwmar23,alwapr23,alwmay23,alwjun23,alwjul23,alwogs23,alwsep23,alwoct23,alwnov23,alwdec23];
-      break;
-    case '2024':
-    
-      allowanceData = [alwjan24,alwfeb24,alwmar24, alwapr24, alwmay24, alwjun24,alwjul24,alwogs24,alwsep24,alwoct24,alwnov24,alwdec24];
-      break;
-      case '2025':
-    
-    allowanceData = [alwjan25,alwfeb25,alwmar25, alwapr25, alwmay25, alwjun25,alwjul25,alwogs25,alwsep25,alwoct25,alwnov25,alwdec25];
-    break;
-    default:
-      // Handle default case or show an error message
-      break;
+  if (selectedYear) {
+    // Generate data for all months in the selected year
+    var months = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
+
+    // For each month, get the allowance data
+    allowanceData = months.map(function(month) {
+      return getAllowanceForMonth(month, selectedYear);
+    });
+  } else {
+    // If no year is selected, show empty data
+    allowanceData = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
   }
 
   // Update the chart data

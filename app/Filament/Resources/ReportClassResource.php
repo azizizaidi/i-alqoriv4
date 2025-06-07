@@ -39,6 +39,7 @@ use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Tables\Actions\BulkAction;
 use Filament\Forms\Components\TimePicker;
+use Carbon\Carbon;
 //use Filament\Pages\Actions\Action;
 
 
@@ -50,6 +51,48 @@ class ReportClassResource extends Resource
     protected static ?string $navigationIcon = 'heroicon-s-pencil-square';
 
    // protected static ?string $report =
+
+    /**
+     * Generate dynamic month-year options in Bahasa Melayu
+     * Starting from March 2022, ending at current month
+     * Schedule task will auto-add new months
+     */
+    protected static function getMonthYearOptions(): array
+    {
+        $options = [];
+        $startDate = Carbon::create(2022, 3, 1); // Start from March 2022
+        $endDate = Carbon::now(); // Only until current month
+
+        // Bahasa Melayu month names
+        $malayMonths = [
+            1 => 'Januari',
+            2 => 'Februari',
+            3 => 'Mac',
+            4 => 'April',
+            5 => 'Mei',
+            6 => 'Jun',
+            7 => 'Julai',
+            8 => 'Ogos',
+            9 => 'September',
+            10 => 'Oktober',
+            11 => 'November',
+            12 => 'Disember'
+        ];
+
+        $current = $startDate->copy();
+
+        while ($current->lte($endDate)) {
+            $monthNum = $current->format('m');
+            $year = $current->format('Y');
+            $key = $monthNum . '-' . $year;
+            $monthName = $malayMonths[(int)$monthNum];
+            $options[$key] = $monthName . ' ' . $year;
+
+            $current->addMonth();
+        }
+
+        return $options;
+    }
 
 
 
@@ -125,7 +168,7 @@ class ReportClassResource extends Resource
              ->schema([
                 DatePicker::make('date')->required()
                 ->label('Tarikh Kelas'),
-                
+
              ])
              ->columns(2),
 
@@ -209,7 +252,7 @@ class ReportClassResource extends Resource
                     })
                     ->hidden(fn (Callable $get) => empty($get('registrar_id')) )
                     ->live(),
-                    
+
 
                   //  Flatpickr::make('date_2')
                    // ->label('Tarikh Kelas Kedua Sebulan(Pilih Semua Tarikh Yang Berkenaan)')
@@ -225,10 +268,10 @@ class ReportClassResource extends Resource
                  Repeater::make('date_2')
                  ->schema([
                     DatePicker::make('date_2'),
-                    
+
                  ])
                  ->columns(2),
-    
+
                     Select::make('total_hour_2')
                     ->label('Jumlah Jam Kelas Kedua Sebulan')
                      ->options([
@@ -294,7 +337,7 @@ class ReportClassResource extends Resource
             ->deferLoading()
             ->groups([
 
-             
+
                 'registrar.name',
                 'month'
             ])
@@ -304,7 +347,7 @@ class ReportClassResource extends Resource
                 Group::make('registrar.name')
                  //   ->visible(auth()->user()->hasRole(1))
                     ->label('Nama Klien'),
-                    
+
             ])
             ->query(ReportClass::query()->orderBy('created_at', 'desc'))
             ->paginated([5,10, 25, 50, 100])
@@ -321,13 +364,13 @@ class ReportClassResource extends Resource
                 ->searchable(),
                 TextColumn::make('registrar.name')
                 ->toggleable()
-                
+
                 ->sortable()
                 ->searchable()
                 ->label('Nama Klien'),
                 TextColumn::make('registrar.code')
                 ->toggleable()
-             
+
                 ->label('Kod Klien')
                 ->searchable(),
                 TextColumn::make('month')
@@ -342,14 +385,14 @@ class ReportClassResource extends Resource
                 ->label('Yuran')
                 ->currency('MYR')
                 ->toggleable(),
-                
+
                 TextColumn::make('date')
                 ->toggleable()
-               
+
                 ->label('Tarikh Kelas 1'),
                 TextColumn::make('date_2')
                 ->toggleable()
-               
+
                 ->label('Tarikh Kelas 2')
 
             ])
@@ -357,47 +400,8 @@ class ReportClassResource extends Resource
                 TernaryFilter::make('deleted_at')
                 ->nullable(),
                 SelectFilter::make('month')
-                ->options([
-                    '03-2022' => 'Mac 2022',
-                    '04-2022' => 'April 2022',
-                    '05-2022' => 'Mei 2022',
-                    '06-2022' => 'Jun 2022',
-                    '07-2022' => 'Julai 2022',
-                    '08-2022' => 'Ogos 2022',
-                    '09-2022' => 'September 2022',
-                    '10-2022' => 'Oktober 2022',
-                    '11-2022' => 'November 2022',
-                    '12-2022' => 'Disember 2022',
-                    '01-2023' => 'Januari 2023',
-                    '02-2023' => 'Februari 2023',
-                    '03-2023' => 'Mac 2023',
-                    '04-2023' => 'April 2023',
-                    '05-2023' => 'Mei 2023',
-                    '06-2023' => 'Jun 2023',
-                    '07-2023' => 'Julai 2023',
-                    '08-2023' => 'Ogos 2023',
-                    '09-2023' => 'September 2023',
-                    '10-2023' => 'Oktober 2023',
-                    '11-2023' => 'November 2023',
-                    '12-2023' => 'Disember 2023',
-                    '01-2024' => 'Januari 2024',
-                    '02-2024' => 'Februari 2024',
-                    '03-2024' => 'Mac 2024',
-                    '04-2024' => 'April 2024',
-                    '05-2024' => 'Mei 2024',
-                    '06-2024' => 'Jun 2024',
-                    '07-2024' => 'Julai 2024',
-                    '08-2024' => 'Ogos 2024',
-                    '09-2024' => 'September 2024',
-                    '10-2024' => 'Oktober 2024',
-                    '11-2024' => 'November 2024',
-                    '12-2024' => 'Disember 2024',
-                    '01-2025' => 'Januari 2025',
-                    '02-2025' => 'Februari 2025',
-                    '03-2025' => 'Mac 2025',
-                    '04-2025' => 'April 2025',
-                ])
-            
+                ->options(static::getMonthYearOptions())
+
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
