@@ -223,6 +223,7 @@ class ListFee extends Component implements HasForms, HasTable
                     '02-2025' => 'Februari 2025',
                     '03-2025' => 'Mac 2025',
                     '04-2025' => 'April 2025',
+                    '05-2025' => 'Mei 2025',
                 ]),
              
 
