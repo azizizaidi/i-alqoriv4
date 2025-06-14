@@ -6,12 +6,13 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Filament\Notifications\Notification;
+use Carbon\Carbon;
 
 class PaymentController extends Controller
 {
     public function createBill(ReportClass $pay)
     {
-        $report = request('pay', 'id');
+        $report = $pay;
 
         $some_data = array(
             'userSecretKey'=> config('toyyibpay.key'),
@@ -23,7 +24,7 @@ class PaymentController extends Controller
             'billAmount'=>$report->fee_student * 100,
             'billReturnUrl'=> route('toyyibpay.paymentstatus', $report->id),
             'billCallbackUrl'=> route('toyyibpay.callback'),
-            'billExternalReferenceNo' => $report->id,
+            'billExternalReferenceNo' => $report->id, // ✅ Ini yang penting untuk sync
             'billTo'=>$report->registrar->name,
             'billEmail'=>'resityuranalqori@gmail.com',
             'billPhone'=>'0183879635',
@@ -38,11 +39,12 @@ class PaymentController extends Controller
         $response = Http::asForm()->post($url, $some_data);
 
         if ($response->successful()) {
-            $billCode = $response[0]['BillCode'];
+            $responseData = $response->json();
+            $billCode = $responseData[0]['BillCode'];
 
-            // Save the billCode to the report
-            $report->bill_code = $billCode;
-            $report->save();
+            // ✅ Optional: Simpan bill_code jika nak, tapi tak wajib untuk sync
+            // $report->bill_code = $billCode;
+            // $report->save();
 
             session([
                 'billAmount' => $report->fee_student,
@@ -57,6 +59,12 @@ class PaymentController extends Controller
 
             return redirect('https://toyyibpay.com/' . $billCode);
         } else {
+            Log::error('ToyyibPay createBill failed', [
+                'report_id' => $report->id,
+                'status' => $response->status(),
+                'body' => $response->body()
+            ]);
+
             Notification::make()
                 ->title('Bil Yuran Gagal Dibuat')
                 ->danger()
@@ -69,11 +77,19 @@ class PaymentController extends Controller
 
     public function paymentStatus(Request $request, $id)
     {
-        $status_id = request()->input('status_id');
-        $billcode = request()->input('billcode');
-        $order_id = request()->input('order_id');
-        $msg = request()->input('msg');
-        $transaction_id = request()->input('transaction_id');
+        $status_id = $request->input('status_id');
+        $billcode = $request->input('billcode');
+        $order_id = $request->input('order_id');
+        $msg = $request->input('msg');
+        $transaction_id = $request->input('transaction_id');
+
+        Log::info('Payment Status Callback', [
+            'id' => $id,
+            'status_id' => $status_id,
+            'billcode' => $billcode,
+            'order_id' => $order_id,
+            'transaction_id' => $transaction_id
+        ]);
 
         if ($status_id == 1) {
             $item = ReportClass::find($id);
@@ -82,8 +98,7 @@ class PaymentController extends Controller
                 $item->transaction_time = now();
                 $item->save();
 
-                $billAmount = session('billAmount');
-                $billCode = session('billCode');
+                session()->forget(['billAmount', 'billCode']);
 
                 Notification::make()
                     ->title('Pembayaran Telah Berjaya')
@@ -94,6 +109,8 @@ class PaymentController extends Controller
 
                 return redirect()->route('filament.admin.pages.monthly-fee');
             } else {
+                Log::error('Payment Status: Report not found', ['id' => $id]);
+                
                 Notification::make()
                     ->title('Yuran ID Tidak Dijumpai')
                     ->danger()
@@ -104,6 +121,12 @@ class PaymentController extends Controller
                 return redirect()->route('filament.admin.pages.monthly-fee');
             }
         } else {
+            Log::warning('Payment failed', [
+                'id' => $id,
+                'status_id' => $status_id,
+                'msg' => $msg
+            ]);
+
             Notification::make()
                 ->title('Pembayaran Telah Gagal')
                 ->danger()
@@ -114,159 +137,269 @@ class PaymentController extends Controller
         }
     }
 
-    public function callback()
+    public function callback(Request $request)
     {
-        $response = request()->all(['refno', 'status', 'reason', 'billcode', 'order_id', 'amount']);
+        $response = $request->all(['refno', 'status', 'reason', 'billcode', 'order_id', 'amount']);
         Log::info('Toyyibpay Callback:', $response);
         
-        // Process callback data to update payment status
-        if (isset($response['status']) && $response['status'] == 1) {
-            // Find the record by bill code or external reference
-            $item = ReportClass::where('bill_code', $response['billcode'])->first();
+        // ✅ Guna refno (billExternalReferenceNo) untuk cari rekod
+        if (isset($response['status']) && $response['status'] == 1 && isset($response['refno'])) {
+            $item = ReportClass::find($response['refno']);
             
             if ($item && $item->status != 1) {
                 $item->status = 1;
                 $item->transaction_time = now();
                 $item->save();
                 
-                Log::info('Payment status updated via callback for bill: ' . $response['billcode']);
-            }
-        }
-    }
-
-    public function billTransaction($billCode)
-    {
-        Log::info('Checking bill transaction for: ' . $billCode);
-        
-        $response = Http::asForm()->post('https://toyyibpay.com/index.php/api/getBillTransactions', [
-            'userSecretKey' => config('toyyibpay.key'),
-            'billCode' => $billCode,
-        ]);
-
-        if ($response->successful()) {
-            $transactions = json_decode($response->body(), true);
-
-            Log::info('Bill Transactions Response for ' . $billCode . ':', ['raw' => $transactions]);
-
-            // Handle different response formats
-            if (is_array($transactions) && !empty($transactions)) {
-                foreach ($transactions as $trx) {
-Log::info('Processing transaction:', $trx);
-// Check if transaction is successful (status = 1 means paid)
-if (isset($trx['billpaymentStatus']) && $trx['billpaymentStatus'] == '1') {
-    // Find the record using external reference number or bill code
-    $externalRef = $trx['billExternalReferenceNo'] ?? null;
-    $item = null;
-    
-    if ($externalRef) {
-        $item = ReportClass::find($externalRef);
-    }
-    
-    // If not found by external ref, try by bill code
-    if (!$item) {
-        $item = ReportClass::where('bill_code', $billCode)->first();
-    }
-
-    if ($item && $item->status != 1) {
-        $item->status = 1;
-        $item->transaction_time = isset($trx['billpaymentDate']) ? 
-            \Carbon\Carbon::parse($trx['billpaymentDate']) : now();
-        $item->save();
-        
-        Log::info('Updated payment status for record ID: ' . $item->id);
-    }
-}
-                }
-
-                return response()->json([
-                    'status' => 'success',
-                    'message' => 'Transaksi telah disemak dan dikemaskini.',
+                Log::info('Payment status updated via callback', [
+                    'report_id' => $response['refno'],
+                    'billcode' => $response['billcode']
                 ]);
-            } else {
-                Log::warning('No transactions found or invalid format for bill: ' . $billCode, ['transactions' => $transactions]);
             }
-        } else {
-            Log::error('Toyyibpay API error for bill: ' . $billCode, [
-                'status' => $response->status(),
-                'body' => $response->body()
-            ]);
         }
 
-        return response()->json([
-            'status' => 'error',
-            'message' => 'Gagal semak transaksi dari ToyyibPay',
-        ], 500);
+        return response()->json(['status' => 'received']);
     }
 
     /**
-     * Sync all unpaid bills with Toyyibpay
+     * ✅ Sync menggunakan getAllBillTransactions API (semua transactions)
+     * Kemudian match dengan billExternalReferenceNo
      */
     public function syncAllUnpaidBills()
     {
-        $unpaidBills = ReportClass::where('status', 0)
-            ->whereNotNull('bill_code')
-            ->get();
+        Log::info('Starting sync using getAllBillTransactions');
 
-        $updatedCount = 0;
-        $errorCount = 0;
+        try {
+            // Get all transactions from ToyyibPay
+            $response = Http::timeout(60)->asForm()->post('https://toyyibpay.com/index.php/api/getAllBillTransactions', [
+                'userSecretKey' => config('toyyibpay.key'),
+                'categoryCode' => config('toyyibpay.category'),
+            ]);
 
-        foreach ($unpaidBills as $bill) {
-            try {
-                $result = $this->syncSingleBill($bill);
-                if ($result) {
-                    $updatedCount++;
-                }
-            } catch (\Exception $e) {
-                $errorCount++;
-                Log::error('Error syncing bill ID: ' . $bill->id, ['error' => $e->getMessage()]);
+            if (!$response->successful()) {
+                Log::error('ToyyibPay getAllBillTransactions failed', [
+                    'status' => $response->status(),
+                    'body' => $response->body()
+                ]);
+                
+                return [
+                    'total_checked' => 0,
+                    'updated' => 0,
+                    'errors' => 1,
+                    'error_details' => ['API call failed']
+                ];
             }
-        }
 
-        Log::info('Sync completed', [
-            'total_checked' => $unpaidBills->count(),
-            'updated' => $updatedCount,
-            'errors' => $errorCount
-        ]);
+            $allTransactions = $response->json();
+            
+            if (!is_array($allTransactions)) {
+                Log::warning('Invalid response format from ToyyibPay');
+                return [
+                    'total_checked' => 0,
+                    'updated' => 0,
+                    'errors' => 1,
+                    'error_details' => ['Invalid response format']
+                ];
+            }
 
-        return [
-            'total_checked' => $unpaidBills->count(),
-            'updated' => $updatedCount,
-            'errors' => $errorCount
-        ];
-    }
+            $updatedCount = 0;
+            $checkedCount = 0;
+            $errors = [];
 
-    /**
-     * Sync a single bill with Toyyibpay
-     */
-    private function syncSingleBill(ReportClass $bill)
-    {
-        if (!$bill->bill_code) {
-            return false;
-        }
+            // Filter untuk transactions yang paid sahaja
+            foreach ($allTransactions as $transaction) {
+                if (!is_array($transaction)) {
+                    continue;
+                }
 
-        $response = Http::asForm()->post('https://toyyibpay.com/index.php/api/getBillTransactions', [
-            'userSecretKey' => config('toyyibpay.key'),
-            'billCode' => $bill->bill_code,
-        ]);
+                $checkedCount++;
 
-        if ($response->successful()) {
-            $transactions = json_decode($response->body(), true);
-
-            if (is_array($transactions) && !empty($transactions)) {
-                foreach ($transactions as $trx) {
-                    // Check if payment is successful
-                    if (isset($trx['billpaymentStatus']) && $trx['billpaymentStatus'] == '1') {
-                        $bill->status = 1;
-                        $bill->transaction_time = isset($trx['billpaymentDate']) ? 
-                            \Carbon\Carbon::parse($trx['billpaymentDate']) : now();
-                        $bill->save();
-                        
-                        return true;
+                // Check jika transaction berjaya dan ada external reference
+                if (isset($transaction['billpaymentStatus']) && 
+                    $transaction['billpaymentStatus'] == '1' && 
+                    isset($transaction['billExternalReferenceNo'])) {
+                    
+                    $externalRefNo = $transaction['billExternalReferenceNo'];
+                    
+                    // Cari rekod dalam sistem menggunakan ID
+                    $report = ReportClass::find($externalRefNo);
+                    
+                    if ($report && $report->status != 1) {
+                        try {
+                            $report->status = 1;
+                            
+                            // Set transaction time dari ToyyibPay
+                            if (isset($transaction['billpaymentDate']) && !empty($transaction['billpaymentDate'])) {
+                                $report->transaction_time = Carbon::parse($transaction['billpaymentDate']);
+                            } else {
+                                $report->transaction_time = now();
+                            }
+                            
+                            $report->save();
+                            $updatedCount++;
+                            
+                            Log::info('Payment synced successfully', [
+                                'report_id' => $report->id,
+                                'external_ref' => $externalRefNo,
+                                'payment_date' => $report->transaction_time
+                            ]);
+                            
+                        } catch (\Exception $e) {
+                            $errors[] = "Failed to update report ID {$externalRefNo}: " . $e->getMessage();
+                            Log::error('Failed to update report', [
+                                'report_id' => $externalRefNo,
+                                'error' => $e->getMessage()
+                            ]);
+                        }
                     }
                 }
             }
+
+            $result = [
+                'total_checked' => $checkedCount,
+                'updated' => $updatedCount,
+                'errors' => count($errors),
+                'error_details' => $errors
+            ];
+
+            Log::info('Sync completed', $result);
+            return $result;
+
+        } catch (\Exception $e) {
+            Log::error('Sync process failed', ['error' => $e->getMessage()]);
+            
+            return [
+                'total_checked' => 0,
+                'updated' => 0,
+                'errors' => 1,
+                'error_details' => [$e->getMessage()]
+            ];
+        }
+    }
+
+    /**
+     * ✅ Alternative: Sync specific unpaid bills dari sistem
+     */
+    public function syncUnpaidBillsFromSystem()
+    {
+        Log::info('Starting sync from system records');
+
+        // Get unpaid bills from system
+        $unpaidBills = ReportClass::where('status', 0)->get();
+        
+        if ($unpaidBills->isEmpty()) {
+            return [
+                'total_checked' => 0,
+                'updated' => 0,
+                'errors' => 0,
+                'error_details' => []
+            ];
         }
 
-        return false;
+        // Get all paid transactions from ToyyibPay
+        try {
+            $response = Http::timeout(60)->asForm()->post('https://toyyibpay.com/index.php/api/getAllBillTransactions', [
+                'userSecretKey' => config('toyyibpay.key'),
+                'categoryCode' => config('toyyibpay.category'),
+            ]);
+
+            if (!$response->successful()) {
+                throw new \Exception('Failed to fetch transactions from ToyyibPay');
+            }
+
+            $allTransactions = $response->json();
+            
+            // Create lookup array untuk transactions yang paid
+            $paidTransactions = [];
+            foreach ($allTransactions as $transaction) {
+                if (isset($transaction['billpaymentStatus']) && 
+                    $transaction['billpaymentStatus'] == '1' &&
+                    isset($transaction['billExternalReferenceNo'])) {
+                    
+                    $paidTransactions[$transaction['billExternalReferenceNo']] = $transaction;
+                }
+            }
+
+            $updatedCount = 0;
+            $errors = [];
+
+            // Check setiap unpaid bill
+            foreach ($unpaidBills as $bill) {
+                if (isset($paidTransactions[$bill->id])) {
+                    try {
+                        $transaction = $paidTransactions[$bill->id];
+                        
+                        $bill->status = 1;
+                        if (isset($transaction['billpaymentDate']) && !empty($transaction['billpaymentDate'])) {
+                            $bill->transaction_time = Carbon::parse($transaction['billpaymentDate']);
+                        } else {
+                            $bill->transaction_time = now();
+                        }
+                        
+                        $bill->save();
+                        $updatedCount++;
+                        
+                        Log::info('Bill updated from system sync', [
+                            'bill_id' => $bill->id,
+                            'payment_date' => $bill->transaction_time
+                        ]);
+                        
+                    } catch (\Exception $e) {
+                        $errors[] = "Failed to update bill ID {$bill->id}: " . $e->getMessage();
+                    }
+                }
+            }
+
+            return [
+                'total_checked' => $unpaidBills->count(),
+                'updated' => $updatedCount,
+                'errors' => count($errors),
+                'error_details' => $errors
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('System sync failed', ['error' => $e->getMessage()]);
+            
+            return [
+                'total_checked' => $unpaidBills->count(),
+                'updated' => 0,
+                'errors' => 1,
+                'error_details' => [$e->getMessage()]
+            ];
+        }
+    }
+
+    /**
+     * ✅ Get payment details for specific report ID
+     */
+    public function getPaymentDetails($reportId)
+    {
+        try {
+            $response = Http::timeout(30)->asForm()->post('https://toyyibpay.com/index.php/api/getAllBillTransactions', [
+                'userSecretKey' => config('toyyibpay.key'),
+                'categoryCode' => config('toyyibpay.category'),
+            ]);
+
+            if ($response->successful()) {
+                $transactions = $response->json();
+                
+                foreach ($transactions as $transaction) {
+                    if (isset($transaction['billExternalReferenceNo']) && 
+                        $transaction['billExternalReferenceNo'] == $reportId) {
+                        return [
+                            'found' => true,
+                            'transaction' => $transaction
+                        ];
+                    }
+                }
+                
+                return ['found' => false];
+            }
+            
+            return ['found' => false, 'error' => 'API call failed'];
+            
+        } catch (\Exception $e) {
+            return ['found' => false, 'error' => $e->getMessage()];
+        }
     }
 }
