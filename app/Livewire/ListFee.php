@@ -56,7 +56,7 @@ class ListFee extends Component implements HasForms, HasTable
 
     public function syncToyyibpayData()
     {
-        $unpaidBills = ReportClass::where('status', 0)->whereNotNull('bill_code')->get();
+        $unpaidBills = ReportClass::where('status', 0)->get();
         $paymentController = new PaymentController();
 
         foreach ($unpaidBills as $bill) {
