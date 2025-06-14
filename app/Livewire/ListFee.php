@@ -26,63 +26,187 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use App\Http\Controllers\PaymentController;
+use Illuminate\Support\Facades\Log;
 
 class ListFee extends Component implements HasForms, HasTable
 {
     use InteractsWithTable;
     use InteractsWithForms;
 
+    public $finalhour;
+
+    /**
+     * ✅ Enhanced sync all transactions from ToyyibPay
+     */
     public function syncToyyibpayData()
     {
+        Log::info('User initiated full ToyyibPay sync', ['user_id' => auth()->id()]);
+        
         $paymentController = new PaymentController();
         
-        // ✅ Use existing syncAllUnpaidBills method
+        // Show loading notification
+        Notification::make()
+            ->title('Memulakan Penyelarasan...')
+            ->info()
+            ->body('Sedang menyelaraskan data dengan ToyyibPay. Sila tunggu sebentar.')
+            ->send();
+        
+        // Use enhanced syncAllUnpaidBills method
         $result = $paymentController->syncAllUnpaidBills();
 
         $message = "Penyelarasan selesai. {$result['total_checked']} transaksi disemak, {$result['updated']} dikemaskini";
         
+        if (isset($result['skipped']) && $result['skipped'] > 0) {
+            $message .= ", {$result['skipped']} dilangkau";
+        }
+        
         if ($result['errors'] > 0) {
             $message .= ", {$result['errors']} ralat";
             
-            // Log error details for debugging
+            // Log error details for admin review
             if (!empty($result['error_details'])) {
-                \Log::warning('Sync errors:', $result['error_details']);
+                Log::warning('Sync errors details:', [
+                    'user_id' => auth()->id(),
+                    'errors' => $result['error_details']
+                ]);
             }
+            
+            // Show warning notification if there are errors
+            Notification::make()
+                ->title('Penyelarasan Selesai dengan Ralat')
+                ->warning()
+                ->body($message . '. Sila semak log untuk butiran ralat.')
+                ->seconds(15)
+                ->send();
+                
+            return;
         }
 
         Notification::make()
-            ->title('Penyelarasan Data Selesai')
+            ->title('Penyelarasan Data Berjaya')
             ->success()
             ->body($message)
+            ->seconds(10)
             ->send();
+            
+        Log::info('ToyyibPay sync completed successfully', [
+            'user_id' => auth()->id(),
+            'result' => $result
+        ]);
     }
 
     /**
-     * ✅ Alternative sync method - use existing syncUnpaidBillsFromSystem
+     * ✅ Enhanced sync from system records
      */
     public function syncFromSystemRecords()
     {
+        Log::info('User initiated system records sync', ['user_id' => auth()->id()]);
+        
         $paymentController = new PaymentController();
+        
+        // Show loading notification
+        Notification::make()
+            ->title('Memulakan Penyelarasan Sistem...')
+            ->info()
+            ->body('Sedang menyelaraskan rekod sistem dengan ToyyibPay.')
+            ->send();
+            
         $result = $paymentController->syncUnpaidBillsFromSystem();
 
         $message = "Penyelarasan dari sistem selesai. {$result['total_checked']} rekod disemak, {$result['updated']} dikemaskini";
         
         if ($result['errors'] > 0) {
             $message .= ", {$result['errors']} ralat";
+            
+            Log::warning('System sync errors:', [
+                'user_id' => auth()->id(),
+                'errors' => $result['error_details'] ?? []
+            ]);
+            
+            Notification::make()
+                ->title('Penyelarasan Sistem Selesai dengan Ralat')
+                ->warning()
+                ->body($message . '. Sila semak log untuk butiran ralat.')
+                ->seconds(15)
+                ->send();
+                
+            return;
         }
 
         Notification::make()
-            ->title('Penyelarasan Sistem Selesai')
+            ->title('Penyelarasan Sistem Berjaya')
             ->success()
             ->body($message)
+            ->seconds(10)
             ->send();
+            
+        Log::info('System sync completed successfully', [
+            'user_id' => auth()->id(),
+            'result' => $result
+        ]);
     }
 
     /**
-     * ✅ Check single payment status using existing getPaymentDetails method
+     * ✅ New method: Sync selected records only
+     */
+    public function syncSelectedRecords(array $recordIds)
+    {
+        if (empty($recordIds)) {
+            Notification::make()
+                ->title('Tiada Rekod Dipilih')
+                ->warning()
+                ->body('Sila pilih rekod untuk disync.')
+                ->send();
+            return;
+        }
+
+        Log::info('User initiated selected records sync', [
+            'user_id' => auth()->id(),
+            'record_ids' => $recordIds
+        ]);
+
+        $paymentController = new PaymentController();
+        
+        Notification::make()
+            ->title('Memulakan Sync Terpilih...')
+            ->info()
+            ->body('Sedang menyelaraskan ' . count($recordIds) . ' rekod terpilih.')
+            ->send();
+            
+        $result = $paymentController->syncSpecificReports($recordIds);
+
+        $message = "{$result['total_checked']} rekod dipilih disemak, {$result['updated']} dikemaskini";
+        
+        if ($result['errors'] > 0) {
+            $message .= ", {$result['errors']} ralat";
+        }
+
+        $notificationType = $result['errors'] > 0 ? 'warning' : 'success';
+        $title = $result['errors'] > 0 ? 'Sync Terpilih Selesai dengan Ralat' : 'Sync Terpilih Berjaya';
+
+        Notification::make()
+            ->title($title)
+            ->$notificationType()
+            ->body($message)
+            ->seconds(10)
+            ->send();
+            
+        Log::info('Selected records sync completed', [
+            'user_id' => auth()->id(),
+            'result' => $result
+        ]);
+    }
+
+    /**
+     * ✅ Enhanced single payment check with better error handling
      */
     public function checkSinglePayment($recordId)
     {
+        Log::info('User checking single payment', [
+            'user_id' => auth()->id(),
+            'record_id' => $recordId
+        ]);
+        
         $paymentController = new PaymentController();
         $result = $paymentController->getPaymentDetails($recordId);
         
@@ -93,19 +217,42 @@ class ListFee extends Component implements HasForms, HasTable
                 // Update record if paid
                 $record = ReportClass::find($recordId);
                 if ($record && $record->status != 1) {
-                    $record->status = 1;
-                    if (isset($transaction['billpaymentDate'])) {
-                        $record->transaction_time = \Carbon\Carbon::parse($transaction['billpaymentDate']);
-                    } else {
-                        $record->transaction_time = now();
+                    try {
+                        $record->status = 1;
+                        
+                        // Use the enhanced date parsing from PaymentController
+                        if (isset($transaction['billpaymentDate']) && !empty($transaction['billpaymentDate'])) {
+                            $record->transaction_time = \Carbon\Carbon::parse($transaction['billpaymentDate']);
+                        } else {
+                            $record->transaction_time = now();
+                        }
+                        
+                        $record->save();
+                        
+                        Notification::make()
+                            ->title('Pembayaran Ditemui!')
+                            ->success()
+                            ->body('Status pembayaran telah dikemaskini dengan waktu transaksi: ' . $record->transaction_time->format('d/m/Y H:i:s'))
+                            ->seconds(10)
+                            ->send();
+                            
+                        Log::info('Single payment updated successfully', [
+                            'record_id' => $recordId,
+                            'transaction_time' => $record->transaction_time
+                        ]);
+                        
+                    } catch (\Exception $e) {
+                        Log::error('Failed to update single payment', [
+                            'record_id' => $recordId,
+                            'error' => $e->getMessage()
+                        ]);
+                        
+                        Notification::make()
+                            ->title('Ralat Kemaskini')
+                            ->danger()
+                            ->body('Gagal mengemaskini status pembayaran: ' . $e->getMessage())
+                            ->send();
                     }
-                    $record->save();
-                    
-                    Notification::make()
-                        ->title('Pembayaran Ditemui!')
-                        ->success()
-                        ->body('Status pembayaran telah dikemaskini.')
-                        ->send();
                 } else {
                     Notification::make()
                         ->title('Sudah Dibayar')
@@ -114,16 +261,21 @@ class ListFee extends Component implements HasForms, HasTable
                         ->send();
                 }
             } else {
+                $status = $transaction['billpaymentStatus'] ?? 'N/A';
                 Notification::make()
                     ->title('Belum Dibayar')
                     ->warning()
-                    ->body('Pembayaran belum selesai di ToyyibPay.')
+                    ->body("Pembayaran belum selesai di ToyyibPay. Status: {$status}")
                     ->send();
             }
         } else {
             $errorMessage = 'Tiada transaksi ditemui untuk rekod ini.';
             if (isset($result['error'])) {
                 $errorMessage .= ' Error: ' . $result['error'];
+                Log::warning('Single payment check failed', [
+                    'record_id' => $recordId,
+                    'error' => $result['error']
+                ]);
             }
             
             Notification::make()
@@ -134,21 +286,44 @@ class ListFee extends Component implements HasForms, HasTable
         }
     }
 
+    /**
+     * ✅ Bulk sync selected records
+     */
+    public function bulkSyncSelected(Collection $records)
+    {
+        $recordIds = $records->pluck('id')->toArray();
+        $this->syncSelectedRecords($recordIds);
+    }
+
     public function table(Table $table): Table
     {
         return $table
             ->headerActions([
                 Action::make('sync')
-                    ->label('Sync Data ToyyibPay')
+                    ->label('Sync Semua Data ToyyibPay')
                     ->icon('heroicon-o-arrow-path')
                     ->color('primary')
+                    ->requiresConfirmation()
+                    ->modalHeading('Sync Semua Data ToyyibPay')
+                    ->modalDescription('Ini akan menyelaraskan semua transaksi dari ToyyibPay. Proses ini mungkin mengambil masa beberapa minit.')
+                    ->modalSubmitActionLabel('Ya, Sync Sekarang')
                     ->action('syncToyyibpayData'),
                     
                 Action::make('sync_system')
                     ->label('Sync Dari Sistem')
                     ->icon('heroicon-o-arrow-path-rounded-square')
                     ->color('secondary')
+                    ->requiresConfirmation()
+                    ->modalHeading('Sync Dari Rekod Sistem')
+                    ->modalDescription('Ini akan menyelaraskan rekod belum bayar dalam sistem dengan ToyyibPay.')
+                    ->modalSubmitActionLabel('Ya, Sync Sekarang')
                     ->action('syncFromSystemRecords'),
+                    
+                Action::make('refresh')
+                    ->label('Refresh Jadual')
+                    ->icon('heroicon-c-arrow-path-rounded-square')
+                    ->color('gray')
+                    ->action(fn () => $this->resetTable()),
             ])
             ->striped()
             ->query(function (){
@@ -156,25 +331,31 @@ class ListFee extends Component implements HasForms, HasTable
                     ->whereNotIn('month', ['null', '02-2022','03-2022', '04-2022'])
                     ->orderBy('created_at', 'desc');
             })
-            ->paginated([5,10, 25, 50, 100])
+            ->paginated([5, 10, 25, 50, 100])
+            ->defaultPaginationPageOption(25)
             ->columns([
                 TextColumn::make('id')
-                    ->label('ID'),
+                    ->label('ID')
+                    ->sortable()
+                    ->searchable(),
 
                 TextColumn::make('created_by.name')
                     ->label('Nama Guru')
                     ->toggleable(isToggledHiddenByDefault: true)
-                    ->searchable(isIndividual: true),
+                    ->searchable(isIndividual: true)
+                    ->sortable(),
 
                 TextColumn::make('registrar.name')
                     ->label('Nama Klien')
                     ->toggleable()
-                    ->searchable(isIndividual: true),
+                    ->searchable(isIndividual: true)
+                    ->sortable(),
 
                 TextColumn::make('registrar.code')
                     ->label('Kod Klien')
                     ->searchable()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->sortable(),
                     
                 TextColumn::make('registrar.phone')
                     ->label('No. Telefon')
@@ -183,16 +364,19 @@ class ListFee extends Component implements HasForms, HasTable
                 TextColumn::make('month')
                     ->label('Bulan')
                     ->toggleable()
-                    ->searchable(),
+                    ->searchable()
+                    ->sortable(),
 
                 TextColumn::make('fee_student')
                     ->label('Yuran')
                     ->currency('MYR')
-                    ->toggleable(),
+                    ->toggleable()
+                    ->sortable(),
                    
                 TextColumn::make('note')
                     ->label('Nota')
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->limit(50),
 
                 TextColumn::make('status')
                     ->badge()
@@ -214,7 +398,8 @@ class ListFee extends Component implements HasForms, HasTable
                         '4' => 'gray',
                         '5' => 'info',
                         default => 'gray',
-                    }),
+                    })
+                    ->sortable(),
 
                 ImageColumn::make('receipt')
                     ->label('Resit')
@@ -226,10 +411,19 @@ class ListFee extends Component implements HasForms, HasTable
                 TextColumn::make('transaction_time')
                     ->label('Waktu Transaksi')
                     ->toggleable()
-                    ->dateTime('d/m/Y H:i:s'),
+                    ->dateTime('d/m/Y H:i:s')
+                    ->sortable()
+                    ->placeholder('Tiada'),
+                    
+                TextColumn::make('created_at')
+                    ->label('Dibuat Pada')
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->dateTime('d/m/Y H:i:s')
+                    ->sortable(),
             ])
             ->filters([
                 SelectFilter::make('status')
+                    ->label('Status')
                     ->options([
                         0 => 'Belum Bayar',
                         1 => 'Dah Bayar',
@@ -237,13 +431,12 @@ class ListFee extends Component implements HasForms, HasTable
                         3 => 'Gagal Bayar',
                         4 => 'Dalam Proses',
                         5 => 'Yuran Terlebih',
-                    ]),
+                    ])
+                    ->default(null),
 
                 SelectFilter::make('month')
                     ->label('Bulan')
                     ->options([
-                        '03-2022' => 'Mac 2022',
-                        '04-2022' => 'April 2022',
                         '05-2022' => 'Mei 2022',
                         '06-2022' => 'Jun 2022',
                         '07-2022' => 'Julai 2022',
@@ -282,7 +475,20 @@ class ListFee extends Component implements HasForms, HasTable
                         '04-2025' => 'April 2025',
                         '05-2025' => 'Mei 2025',
                         '06-2025' => 'Jun 2025',
-                    ]),
+                        '07-2025' => 'Julai 2025',
+                        '08-2025' => 'Ogos 2025',
+                        '09-2025' => 'September 2025',
+                        '10-2025' => 'Oktober 2025',
+                        '11-2025' => 'November 2025',
+                        '12-2025' => 'Disember 2025',
+                    ])
+                    ->searchable(),
+                
+                SelectFilter::make('created_by')
+                    ->label('Guru')
+                    ->relationship('created_by', 'name')
+                    ->searchable()
+                    ->preload(),
             ])
             ->actions([
                 Action::make('pdf')
@@ -297,7 +503,7 @@ class ListFee extends Component implements HasForms, HasTable
                             Blade::render('pdf', ['value' => $record, 'finalhour' => $this->finalhour])
                         );
                 
-                        $filename = 'invois' . $record->id . '.pdf';
+                        $filename = 'invois_' . $record->id . '_' . now()->format('YmdHis') . '.pdf';
                 
                         return response()->streamDownload(function () use ($pdf) {
                             echo $pdf->output();
@@ -333,36 +539,127 @@ class ListFee extends Component implements HasForms, HasTable
                                 3 => 'Gagal Bayar',
                                 4 => 'Dalam Proses',
                                 5 => 'Yuran Terlebih',
-                            ]),
+                            ])
+                            ->required(),
                         TextInput::make('note')
                             ->label('Nota')
+                            ->maxLength(255)
                     ])
                     ->action(function (array $data, ReportClass $record): void {
+                        $oldStatus = $record->status;
                         $record->status = $data['status'];
                         $record->note = $data['note'];
+                        
+                        // If manually setting to paid, set transaction time
+                        if ($data['status'] == 1 && $oldStatus != 1 && !$record->transaction_time) {
+                            $record->transaction_time = now();
+                        }
+                        
                         $record->save();
+                        
+                        Log::info('Manual status update', [
+                            'user_id' => auth()->id(),
+                            'record_id' => $record->id,
+                            'old_status' => $oldStatus,
+                            'new_status' => $data['status'],
+                            'note' => $data['note']
+                        ]);
+                        
+                        Notification::make()
+                            ->title('Status Dikemaskini')
+                            ->success()
+                            ->body('Status rekod telah berjaya dikemaskini.')
+                            ->send();
                     }),
 
-                // ✅ Use existing getPaymentDetails method instead of non-existent billTransaction
                 Action::make('check_payment')
                     ->label('Semak Bayaran')
                     ->icon('heroicon-o-magnifying-glass')
                     ->color('info')
                     ->visible(fn(ReportClass $record): bool => $record->status == 0)
+                    ->requiresConfirmation()
+                    ->modalHeading('Semak Status Pembayaran')
+                    ->modalDescription('Ini akan menyemak status pembayaran terkini dari ToyyibPay.')
+                    ->modalSubmitActionLabel('Ya, Semak Sekarang')
                     ->action(function (ReportClass $record) {
                         $this->checkSinglePayment($record->id);
                     }),
             ])
-            ->groupedBulkActions([
-                ExportBulkAction::make()
-                    ->label('Eksport'),
+            ->bulkActions([
+                BulkActionGroup::make([
+                    ExportBulkAction::make()
+                        ->label('Eksport Excel'),
+                        
+                    BulkAction::make('sync_selected')
+                        ->label('Sync Terpilih')
+                        ->icon('heroicon-o-arrow-path')
+                        ->color('primary')
+                        ->requiresConfirmation()
+                        ->modalHeading('Sync Rekod Terpilih')
+                        ->modalDescription('Ini akan menyelaraskan rekod yang dipilih dengan ToyyibPay.')
+                        ->action(fn (Collection $records) => $this->bulkSyncSelected($records)),
+                        
+                    BulkAction::make('mark_paid')
+                        ->label('Tandai Sebagai Dibayar')
+                        ->icon('heroicon-o-check-circle')
+                        ->color('success')
+                        ->requiresConfirmation()
+                        ->modalHeading('Tandai Sebagai Dibayar')
+                        ->modalDescription('Ini akan menandai semua rekod terpilih sebagai dibayar. Gunakan dengan berhati-hati.')
+                        ->action(function (Collection $records) {
+                            $updated = 0;
+                            foreach ($records as $record) {
+                                if ($record->status != 1) {
+                                    $record->status = 1;
+                                    $record->transaction_time = now();
+                                    $record->save();
+                                    $updated++;
+                                }
+                            }
+                            
+                            Log::info('Bulk mark as paid', [
+                                'user_id' => auth()->id(),
+                                'updated_count' => $updated,
+                                'record_ids' => $records->pluck('id')->toArray()
+                            ]);
+                            
+                            Notification::make()
+                                ->title('Status Dikemaskini')
+                                ->success()
+                                ->body("{$updated} rekod telah ditandai sebagai dibayar.")
+                                ->send();
+                        }),
                     
-                BulkAction::make('delete')
-                    ->requiresConfirmation()
-                    ->label('Padam')
-                    ->action(fn (Collection $records) => $records->each->delete())
-                    ->icon('heroicon-s-trash'),
-            ]);
+                    BulkAction::make('delete')
+                        ->requiresConfirmation()
+                        ->label('Padam')
+                        ->color('danger')
+                        ->modalHeading('Padam Rekod')
+                        ->modalDescription('Adakah anda pasti ingin memadam rekod yang dipilih? Tindakan ini tidak boleh dibatalkan.')
+                        ->action(function (Collection $records) {
+                            $count = $records->count();
+                            $recordIds = $records->pluck('id')->toArray();
+                            
+                            $records->each->delete();
+                            
+                            Log::warning('Bulk delete records', [
+                                'user_id' => auth()->id(),
+                                'deleted_count' => $count,
+                                'record_ids' => $recordIds
+                            ]);
+                            
+                            Notification::make()
+                                ->title('Rekod Dipadam')
+                                ->success()
+                                ->body("{$count} rekod telah berjaya dipadam.")
+                                ->send();
+                        })
+                        ->icon('heroicon-s-trash'),
+                ])
+            ])
+            ->emptyStateHeading('Tiada Rekod Yuran')
+            ->emptyStateDescription('Tiada rekod yuran ditemui untuk paparan.')
+            ->emptyStateIcon('heroicon-o-currency-dollar');
     }
 
     public function render(): View
