@@ -40,6 +40,10 @@ class PaymentController extends Controller
         if ($response->successful()) {
             $billCode = $response[0]['BillCode'];
 
+            // Save the billCode to the report
+            $report->bill_code = $billCode;
+            $report->save();
+
             session([
                 'billAmount' => $report->fee_student,
                 'billCode' => $billCode
@@ -115,8 +119,38 @@ class PaymentController extends Controller
         Log::info($response);
     }
 
-    public function billTransaction()
-    {
-        // Implement as needed
+   public function billTransaction($billCode)
+{
+    $response = Http::asForm()->post('https://toyyibpay.com/index.php/api/getBillTransactions', [
+        'userSecretKey' => config('toyyibpay.key'),
+        'billCode' => $billCode,
+    ]);
+
+    if ($response->successful()) {
+        $transactions = $response->json();
+
+        foreach ($transactions as $trx) {
+            if ($trx['status'] == 1) {
+                $item = ReportClass::find($trx['externalReferenceNo']); // guna ID asal bil
+
+                if ($item && $item->status != 1) {
+                    $item->status = 1;
+                    $item->transaction_time = $trx['payDate'] ?? now(); // GUNA transaction_time
+                    $item->save();
+                }
+            }
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Transaksi telah disemak dan dikemaskini.',
+        ]);
     }
+
+    return response()->json([
+        'status' => 'error',
+        'message' => 'Gagal semak transaksi dari ToyyibPay',
+    ], 500);
+}
+
 }

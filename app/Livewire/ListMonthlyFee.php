@@ -119,6 +119,14 @@ class ListMonthlyFee extends Component implements HasForms, HasTable
                     ->disk('public')
                     ->circular()
                     ->visibility('public'),
+                TextColumn::make('transaction_time')
+                    ->label('Waktu Transaksi')
+                     ->toggleable()
+                    ->dateTime('d/m/Y H:i:s'),
+                 TextColumn::make('bill_code')
+                    ->label('Kod Bil')
+                     ->toggleable()
+
             ])
             ->filters([
                 SelectFilter::make('status')

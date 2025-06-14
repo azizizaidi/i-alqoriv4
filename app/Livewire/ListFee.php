@@ -46,12 +46,29 @@ use Closure;
 
 
 
+use Filament\Notifications\Notification;
+use App\Http\Controllers\PaymentController;
+
 class ListFee extends Component implements HasForms, HasTable
 {
     use InteractsWithTable;
     use InteractsWithForms;
 
+    public function syncToyyibpayData()
+    {
+        $unpaidBills = ReportClass::where('status', 0)->whereNotNull('bill_code')->get();
+        $paymentController = new PaymentController();
 
+        foreach ($unpaidBills as $bill) {
+            $paymentController->billTransaction($bill->bill_code);
+        }
+
+        Notification::make()
+            ->title('Penyelarasan Data Selesai')
+            ->success()
+            ->body('Status pembayaran telah diselaraskan dengan Toyyibpay.')
+            ->send();
+    }
 
     public function table(Table $table): Table
 
@@ -60,7 +77,12 @@ class ListFee extends Component implements HasForms, HasTable
     {
 
         return $table
-       
+            ->headerActions([
+                Action::make('sync')
+                    ->label('Sync Data')
+                    ->icon('heroicon-o-arrow-path')
+                    ->action('syncToyyibpayData'),
+            ])
             ->striped()
             ->groups([
 
@@ -126,17 +148,7 @@ class ListFee extends Component implements HasForms, HasTable
                     5 => 'Yuran Terlebih',
          
                 })
-  //       IconColumn::make('status')
-  //       ->icon(fn (string $state): string => match ($state) {
-  //          '0' => 'heroicon-s-table-cells',
-  //         '1' => 'si-ticktick',
-  //         '2' => 'fas-hand-holding-usd',
-  //         '3' => 'elemplus-failed',
-  //         '4' => 'heroicon-m-arrow-uturn-left',
-  //         '5' => 'ri-refund-2-fill'
-             
-            
-   //      })
+
                    
                 ->color(fn (string $state): string => match ($state) {
                     '0' => 'danger',
@@ -155,6 +167,13 @@ class ListFee extends Component implements HasForms, HasTable
                      ->circular()
                     // ->defaultImageUrl(url('images/placeholder.png'))
                      ->visibility('public'),
+                         TextColumn::make('transaction_time')
+                    ->label('Waktu Transaksi')
+                     ->toggleable()
+                    ->dateTime('d/m/Y H:i:s'),
+                 TextColumn::make('bill_code')
+                    ->label('Kod Bil')
+                     ->toggleable()
 
 
 

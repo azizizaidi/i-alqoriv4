@@ -3,27 +3,46 @@
 namespace App\Filament\Pages;
 
 use Filament\Pages\Page;
-use Filament\Tables\Actions\Action;
-use Filament\Tables\Table;
-
-
+use Filament\Actions\Action;
+use App\Http\Controllers\PaymentController;
+use App\Models\ReportClass;
+use Filament\Notifications\Notification;
 
 class MonthlyFee extends Page
 {
     protected static ?string $navigationIcon = 'heroicon-o-banknotes';
+
+    protected function getHeaderActions(): array
+    {
+        return [
+            Action::make('sync')
+                ->label('Sync Data')
+                ->icon('heroicon-o-arrow-path')
+                ->action('syncToyyibpayData'),
+        ];
+    }
+
+    public function syncToyyibpayData()
+    {
+        $unpaidBills = ReportClass::where('status', 0)->whereNotNull('bill_code')->get();
+        $paymentController = new PaymentController();
+
+        foreach ($unpaidBills as $bill) {
+            $paymentController->billTransaction($bill->bill_code);
+        }
+
+        Notification::make()
+            ->title('Penyelarasan Data Selesai')
+            ->success()
+            ->body('Status pembayaran telah diselaraskan dengan Toyyibpay.')
+            ->send();
+    }
 
     protected static string $view = 'filament.pages.monthly-fee';
 
     protected static ?string $title = 'Yuran Bulanan';
 
 
-    public static function table(Table $table): Table
-{
-    return $table
-
-        ->emptyStateIcon('heroicon-o-bookmark');
-
-}
 
 public static function getNavigationLabel(): string
 {

@@ -27,10 +27,12 @@ class ReportClass extends Model
         'created_at',
         'updated_at',
         'deleted_at',
+        'transaction_time',
     ];
 
     protected $fillable = [
-
+        'bill_code',
+        'transaction_time',
        'registrar_id',
         'class_names_id',
         'date',
