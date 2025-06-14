@@ -43,9 +43,6 @@ use Filament\Tables\Columns\BadgeColumn;
 use Illuminate\Database\Eloquent\Model;
 use Closure;
 
-
-
-
 use Filament\Notifications\Notification;
 use App\Http\Controllers\PaymentController;
 
@@ -56,26 +53,24 @@ class ListFee extends Component implements HasForms, HasTable
 
     public function syncToyyibpayData()
     {
-        $unpaidBills = ReportClass::where('status', 0)->get();
         $paymentController = new PaymentController();
+        $result = $paymentController->syncAllUnpaidBills();
 
-        foreach ($unpaidBills as $bill) {
-            $paymentController->billTransaction($bill->bill_code);
+        $message = "Penyelarasan selesai. {$result['total_checked']} bil disemak, {$result['updated']} dikemaskini";
+        
+        if ($result['errors'] > 0) {
+            $message .= ", {$result['errors']} ralat";
         }
 
         Notification::make()
             ->title('Penyelarasan Data Selesai')
             ->success()
-            ->body('Status pembayaran telah diselaraskan dengan Toyyibpay.')
+            ->body($message)
             ->send();
     }
 
     public function table(Table $table): Table
-
-
-
     {
-
         return $table
             ->headerActions([
                 Action::make('sync')
@@ -85,7 +80,6 @@ class ListFee extends Component implements HasForms, HasTable
             ])
             ->striped()
             ->groups([
-
 
             ])
             ->query(function (){
@@ -98,7 +92,6 @@ class ListFee extends Component implements HasForms, HasTable
             ->columns([
 
                     TextColumn::make('id'),
-
 
                     TextColumn::make('created_by.name')
                     ->label('Nama Guru')
@@ -175,13 +168,6 @@ class ListFee extends Component implements HasForms, HasTable
                     ->label('Kod Bil')
                      ->toggleable()
 
-
-
-
-
-
-
-
             ])
             ->filters([
                 SelectFilter::make('status')
@@ -194,7 +180,6 @@ class ListFee extends Component implements HasForms, HasTable
 
                     3 => 'Gagal Bayar',
 
-                    
                     4 => 'Dalam Proses',
 
                      5 => 'Yuran Terlebih',
@@ -335,7 +320,6 @@ class ListFee extends Component implements HasForms, HasTable
                      //   $record->receipt = $data['receipt'];
                         $record->note = $data['note'];
 
-
                         $record->save();
                        })
             ])
@@ -358,6 +342,4 @@ class ListFee extends Component implements HasForms, HasTable
     {
         return view('livewire.list-fee');
     }
-
-
 }
