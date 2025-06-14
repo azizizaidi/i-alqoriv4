@@ -119,7 +119,7 @@ class PaymentController extends Controller
         Log::info($response);
     }
 
-   public function billTransaction($billCode)
+  public function billTransaction($billCode)
 {
     $response = Http::asForm()->post('https://toyyibpay.com/index.php/api/getBillTransactions', [
         'userSecretKey' => config('toyyibpay.key'),
@@ -127,24 +127,32 @@ class PaymentController extends Controller
     ]);
 
     if ($response->successful()) {
-        $transactions = $response->json();
+        $transactions = json_decode($response->body(), true);
 
-        foreach ($transactions as $trx) {
-            if ($trx['status'] == 1) {
-                $item = ReportClass::find($trx['externalReferenceNo']); // guna ID asal bil
+        Log::info('Bill Transactions Response:', ['raw' => $transactions]);
 
-                if ($item && $item->status != 1) {
-                    $item->status = 1;
-                    $item->transaction_time = $trx['payDate'] ?? now(); // GUNA transaction_time
-                    $item->save();
+        if (is_array($transactions)) {
+            foreach ($transactions as $trx) {
+                if (isset($trx['status']) && $trx['status'] == 1) {
+                    $item = ReportClass::find($trx['externalReferenceNo']);
+
+                    if ($item && $item->status != 1) {
+                        $item->status = 1;
+                        $item->transaction_time = $trx['payDate'] ?? now();
+                        $item->save();
+                    }
                 }
             }
-        }
 
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Transaksi telah disemak dan dikemaskini.',
-        ]);
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Transaksi telah disemak dan dikemaskini.',
+            ]);
+        } else {
+            Log::error('Format response bukan array', ['transactions' => $transactions]);
+        }
+    } else {
+        Log::error('Toyyibpay response error', ['body' => $response->body()]);
     }
 
     return response()->json([
@@ -152,5 +160,6 @@ class PaymentController extends Controller
         'message' => 'Gagal semak transaksi dari ToyyibPay',
     ], 500);
 }
+
 
 }
