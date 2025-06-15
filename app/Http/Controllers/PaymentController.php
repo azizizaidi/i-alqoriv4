@@ -137,30 +137,149 @@ class PaymentController extends Controller
         }
     }
 
-    public function callback(Request $request)
-    {
-        $response = $request->all(['refno', 'status', 'reason', 'billcode', 'order_id', 'amount']);
-        Log::info('Toyyibpay Callback:', $response);
+   public function callback(Request $request)
+{
+    // Log semua data yang diterima untuk debugging
+    $allData = $request->all();
+    Log::info('Toyyibpay Callback - All Data:', $allData);
+    
+    $response = $request->all(['refno', 'status', 'reason', 'billcode', 'order_id', 'amount']);
+    Log::info('Toyyibpay Callback - Filtered Data:', $response);
+    
+    try {
+        // Validate required fields
+        if (!isset($response['refno']) || empty($response['refno'])) {
+            Log::error('Callback missing refno', $response);
+            return response()->json(['status' => 'error', 'message' => 'Missing refno']);
+        }
         
-        // ✅ Guna refno (billExternalReferenceNo) untuk cari rekod
-        if (isset($response['status']) && $response['status'] == 1 && isset($response['refno'])) {
-            $item = ReportClass::find($response['refno']);
+        if (!isset($response['status'])) {
+            Log::error('Callback missing status', $response);
+            return response()->json(['status' => 'error', 'message' => 'Missing status']);
+        }
+        
+        // Only process successful payments
+        if ($response['status'] == 1) {
+            $reportId = $response['refno'];
+            $item = ReportClass::find($reportId);
             
-            if ($item && $item->status != 1) {
+            if (!$item) {
+                Log::error('Report not found in callback', [
+                    'report_id' => $reportId,
+                    'callback_data' => $response
+                ]);
+                return response()->json(['status' => 'error', 'message' => 'Report not found']);
+            }
+            
+            // Only update if not already paid
+            if ($item->status != 1) {
                 $item->status = 1;
                 $item->transaction_time = now();
+                
+                // Optional: Store transaction details
+                if (isset($response['billcode'])) {
+                    $item->bill_code = $response['billcode'];
+                }
+                if (isset($response['order_id'])) {
+                    $item->toyyibpay_order_id = $response['order_id'];
+                }
+                
                 $item->save();
                 
                 Log::info('Payment status updated via callback', [
-                    'report_id' => $response['refno'],
-                    'billcode' => $response['billcode']
+                    'report_id' => $reportId,
+                    'billcode' => $response['billcode'] ?? 'N/A',
+                    'order_id' => $response['order_id'] ?? 'N/A',
+                    'amount' => $response['amount'] ?? 'N/A'
                 ]);
+                
+                return response()->json(['status' => 'success', 'message' => 'Payment updated']);
+            } else {
+                Log::info('Payment already processed', [
+                    'report_id' => $reportId,
+                    'current_status' => $item->status
+                ]);
+                return response()->json(['status' => 'success', 'message' => 'Already processed']);
             }
+        } else {
+            // Payment failed
+            Log::warning('Payment failed in callback', [
+                'report_id' => $response['refno'] ?? 'N/A',
+                'status' => $response['status'],
+                'reason' => $response['reason'] ?? 'N/A'
+            ]);
+            return response()->json(['status' => 'received', 'message' => 'Payment failed']);
         }
-
-        return response()->json(['status' => 'received']);
+        
+    } catch (\Exception $e) {
+        Log::error('Callback processing failed', [
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString(),
+            'callback_data' => $response
+        ]);
+        
+        return response()->json(['status' => 'error', 'message' => 'Processing failed']);
     }
+}
 
+// Method untuk manual check dan fix payments
+public function manualSyncCheck()
+{
+    Log::info('Starting manual sync check');
+    
+    // Check recent unpaid bills (last 30 days)
+    $recentUnpaid = ReportClass::where('status', 0)
+        ->where('created_at', '>=', now()->subDays(30))
+        ->get();
+    
+    if ($recentUnpaid->isEmpty()) {
+        return [
+            'message' => 'No recent unpaid bills found',
+            'total_checked' => 0,
+            'updated' => 0
+        ];
+    }
+    
+    $results = $this->syncSpecificReports($recentUnpaid->pluck('id')->toArray());
+    
+    Log::info('Manual sync check completed', $results);
+    return $results;
+}
+
+// Cron job method untuk daily sync
+public function dailySync()
+{
+    Log::info('Starting daily sync process');
+    
+    try {
+        // Sync from system (more efficient for daily runs)
+        $systemSyncResults = $this->syncUnpaidBillsFromSystem();
+        
+        // Log results
+        Log::info('Daily sync completed', $systemSyncResults);
+        
+        // Send notification if there are errors
+        if ($systemSyncResults['errors'] > 0) {
+            // You can add email notification here
+            Log::error('Daily sync had errors', $systemSyncResults['error_details']);
+        }
+        
+        return $systemSyncResults;
+        
+    } catch (\Exception $e) {
+        Log::error('Daily sync failed', [
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
+        
+        return [
+            'total_checked' => 0,
+            'updated' => 0,
+            'errors' => 1,
+            'error_details' => [$e->getMessage()]
+        ];
+    }
+}
     /**
      * ✅ Sync menggunakan getAllBillTransactions API (semua transactions)
      * Kemudian match dengan billExternalReferenceNo
